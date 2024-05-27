@@ -1,0 +1,92 @@
+'use strict';
+
+console.log('Loading function');
+
+const https = require('https');
+
+exports.handler = async (event) => {
+  try {
+    console.log('Received event:', JSON.stringify(event, null, 2));
+    const message = JSON.parse(event.Records[0].Sns.Message);
+
+    switch (message.notificationType) {
+      case 'Bounce':
+        await handleBounce(message);
+        break;
+      case 'Complaint':
+        await handleComplaint(message);
+        break;
+      default:
+        throw new Error("Unknown notification type: " + message.notificationType);
+    }
+
+    return {
+      statusCode: 200,
+      body: "Success"
+    };
+  } catch (error) {
+    console.error("Error:", error);
+    return {
+      statusCode: 500,
+      body: "Internal Server Error"
+    };
+  }
+};
+
+async function handleBounce(message) {
+  const messageId = message.mail.messageId;
+  const addresses = message.bounce.bouncedRecipients.map((recipient) => recipient.emailAddress);
+  const bounceType = message.bounce.bounceType;
+
+  console.log("Message " + messageId + " bounced when sending to " + addresses.join(", ") + ". Bounce type: " + bounceType);
+
+  for (let i = 0; i < addresses.length; i++) {
+    // Perform actions for bounce notifications
+    // For example, send a Slack notification
+    await sendSlackNotification(`Bounce notification for email: ${addresses[i]}\nBounce type: ${bounceType}`);
+  }
+}
+
+async function handleComplaint(message) {
+  const messageId = message.mail.messageId;
+  const addresses = message.complaint.complainedRecipients.map((recipient) => recipient.emailAddress);
+
+  console.log("A complaint was reported by " + addresses.join(", ") + " for message " + messageId + ".");
+
+  for (let i = 0; i < addresses.length; i++) {
+    // Perform actions for complaint notifications
+    // For example, send a Slack notification
+    await sendSlackNotification(`Complaint notification for email: ${addresses[i]}`);
+  }
+}
+
+async function sendSlackNotification(message) {
+  const webhookUrl = 'https://hooks.slack.com/services/123456789';
+
+  const postData = JSON.stringify({ text: message });
+
+  const options = {
+    method: 'POST',
+    hostname: 'hooks.slack.com',
+    path: '/services/123456789',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': postData.length
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      console.log("Slack notification sent:", message);
+      resolve();
+    });
+
+    req.on('error', (error) => {
+      console.error("Error sending Slack notification:", error);
+      reject(error);
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
